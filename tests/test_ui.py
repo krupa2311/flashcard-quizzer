@@ -5,7 +5,7 @@ import sys
 import pytest
 
 from quiz_engine import QuizSession, get_quiz_mode
-from ui import run_quiz, print_summary, green, red
+from ui import green, print_summary, red, run_quiz
 from utils.file_handler import Flashcard
 
 

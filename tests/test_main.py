@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from main import parse_args, main, select_cards
+from main import main, parse_args, select_cards
 from utils.file_handler import Flashcard
 
 
@@ -298,3 +298,174 @@ class TestMain:
         result = main(["-f", str(deck_file), "--limit", "2"])
 
         assert result == 0
+
+    def test_parse_args_export_default_is_none(self) -> None:
+        """--export argument defaults to None."""
+        args = parse_args(["-f", "test.json"])
+        assert args.export is None
+
+    def test_parse_args_with_valid_export_json(self) -> None:
+        """Valid --export with .json extension is parsed correctly."""
+        args = parse_args(["-f", "test.json", "--export", "results.json"])
+        assert args.export == "results.json"
+
+    def test_parse_args_with_valid_export_csv(self) -> None:
+        """Valid --export with .csv extension is parsed correctly."""
+        args = parse_args(["-f", "test.json", "--export", "results.csv"])
+        assert args.export == "results.csv"
+
+    def test_parse_args_export_case_insensitive_json(self) -> None:
+        """--export with .JSON extension is accepted."""
+        args = parse_args(["-f", "test.json", "--export", "results.JSON"])
+        assert args.export == "results.JSON"
+
+    def test_parse_args_export_case_insensitive_csv(self) -> None:
+        """--export with .CSV extension is accepted."""
+        args = parse_args(["-f", "test.json", "--export", "results.CSV"])
+        assert args.export == "results.CSV"
+
+    def test_parse_args_export_unsupported_extension_raises_system_exit(
+        self,
+    ) -> None:
+        """--export with unsupported extension raises SystemExit."""
+        with pytest.raises(SystemExit):
+            parse_args(["-f", "test.json", "--export", "results.txt"])
+
+    def test_main_with_export_creates_json_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """main with --export creates a JSON file with correct data."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                    {"front": "Q2", "back": "A2"},
+                ]
+            )
+        )
+        export_file = tmp_path / "results.json"
+
+        fake_stdin = io.StringIO("a1\nwrong\n")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+
+        result = main(["-f", str(deck_file), "--export", str(export_file)])
+
+        assert result == 0
+        assert export_file.exists()
+        with open(export_file) as f:
+            data = json.load(f)
+        assert data["total_questions"] == 2
+        assert data["correct_count"] == 1
+        assert len(data["missed_terms"]) == 1
+
+    def test_main_with_export_creates_csv_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """main with --export creates a CSV file with correct format."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                    {"front": "Q2", "back": "A2"},
+                ]
+            )
+        )
+        export_file = tmp_path / "results.csv"
+
+        fake_stdin = io.StringIO("a1\nwrong\n")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+
+        result = main(["-f", str(deck_file), "--export", str(export_file)])
+
+        assert result == 0
+        assert export_file.exists()
+        with open(export_file, newline="") as f:
+            import csv
+
+            reader = csv.reader(f)
+            rows = list(reader)
+        assert len(rows) == 2
+        assert rows[0][0] == "timestamp"
+        assert rows[1][3] == "2"
+
+    def test_main_with_export_zero_questions_skips_export(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        """main with --export and zero answered questions prints notice."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                ]
+            )
+        )
+        export_file = tmp_path / "results.json"
+
+        fake_stdin = io.StringIO("")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+
+        result = main(["-f", str(deck_file), "--export", str(export_file)])
+
+        assert result == 0
+        assert not export_file.exists()
+        captured = capsys.readouterr()
+        assert "No questions answered" in captured.err
+        assert "skipping export" in captured.err
+
+    def test_main_with_export_nonexistent_directory_returns_1(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """main with --export to nonexistent dir returns 1 and prints error."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                ]
+            )
+        )
+        export_file = tmp_path / "nonexistent" / "results.json"
+
+        fake_stdin = io.StringIO("a1\n")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+
+        result = main(["-f", str(deck_file), "--export", str(export_file)])
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "Export error:" in captured.err
+
+    def test_main_with_export_prints_success_message(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        """main with --export prints 'Results saved to <path>'."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                ]
+            )
+        )
+        export_file = tmp_path / "results.json"
+
+        fake_stdin = io.StringIO("a1\n")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+
+        result = main(["-f", str(deck_file), "--export", str(export_file)])
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert f"Results saved to {export_file}" in captured.out

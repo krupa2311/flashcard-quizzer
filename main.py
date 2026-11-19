@@ -10,6 +10,7 @@ import sys
 
 from quiz_engine import QUIZ_MODES, QuizSession, get_quiz_mode
 from ui import print_summary, run_quiz
+from utils.exporter import ExportError, export_session
 from utils.file_handler import Flashcard, FlashcardLoadError, load_flashcards
 
 
@@ -34,6 +35,26 @@ def _validate_limit(value: str) -> int:
         return num
     except ValueError:
         raise argparse.ArgumentTypeError(f"--limit must be an integer, got '{value}'")
+
+
+def _validate_export_path(value: str) -> str:
+    """Validate that --export path has a supported extension.
+
+    Args:
+        value: The file path from argparse.
+
+    Returns:
+        The validated file path.
+
+    Raises:
+        argparse.ArgumentTypeError: If the extension is not .csv or .json.
+    """
+    path_lower = value.lower()
+    if not (path_lower.endswith(".csv") or path_lower.endswith(".json")):
+        raise argparse.ArgumentTypeError(
+            f"Export path must end with .csv or .json (got {value})"
+        )
+    return value
 
 
 def select_cards(
@@ -108,6 +129,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Limit the number of cards to quiz on",
     )
 
+    parser.add_argument(
+        "--export",
+        type=_validate_export_path,
+        default=None,
+        help="Export session results to a JSON or CSV file",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -115,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     """Run the Flashcard Quizzer application.
 
     Loads flashcards from a file, creates a quiz session, runs the quiz,
-    and prints a summary.
+    prints a summary, and optionally exports results.
 
     Args:
         argv: Optional list of arguments (default: sys.argv[1:]).
@@ -139,6 +167,25 @@ def main(argv: list[str] | None = None) -> int:
 
     run_quiz(session)
     print_summary(session, show_details=args.stats)
+
+    if args.export:
+        if session.total_questions == 0:
+            print(
+                "No questions answered; skipping export.",
+                file=sys.stderr,
+            )
+        else:
+            try:
+                export_session(
+                    session,
+                    args.export,
+                    args.mode,
+                    args.file,
+                )
+                print(f"Results saved to {args.export}")
+            except ExportError as e:
+                print(f"Export error: {e}", file=sys.stderr)
+                return 1
 
     return 0
 

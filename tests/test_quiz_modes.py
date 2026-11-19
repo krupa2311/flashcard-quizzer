@@ -7,9 +7,9 @@ import pytest
 
 from quiz_engine import (
     AdaptiveMode,
+    QuizSession,
     RandomMode,
     SequentialMode,
-    QuizSession,
     get_quiz_mode,
 )
 from utils.file_handler import Flashcard
