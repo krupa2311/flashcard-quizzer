@@ -10,6 +10,18 @@ from abc import ABC, abstractmethod
 from utils.file_handler import Flashcard
 
 
+def _normalize(text: str) -> str:
+    """Normalize text for comparison: strip, casefold, collapse whitespace.
+
+    Args:
+        text: The text to normalize.
+
+    Returns:
+        Normalized text.
+    """
+    return " ".join(text.strip().casefold().split())
+
+
 class QuizMode(ABC):
     """Abstract base class for quiz modes using the Strategy pattern.
 
@@ -34,7 +46,7 @@ class QuizMode(ABC):
         """
         if not cards:
             raise ValueError("Cannot create a quiz with an empty list of flashcards")
-        self.cards = cards
+        self.cards = list(cards)
 
     @abstractmethod
     def next_card(self) -> Flashcard | None:
@@ -153,41 +165,43 @@ class AdaptiveMode(QuizMode):
         self.queue = cards.copy()
 
     def next_card(self) -> Flashcard | None:
-        """Get the next card from the queue.
+        """Get and remove the next card from the queue.
 
         Returns:
-            The front card of the queue, or None if the queue is empty.
+            The front card of the queue (removed), or None if the queue is empty.
         """
         if self.queue:
-            return self.queue[0]
+            return self.queue.pop(0)
         return None
 
     def record_result(self, card: Flashcard, correct: bool) -> None:
         """Record the result and re-queue if incorrect.
 
-        If the card was answered incorrectly, it is removed from the front
-        of the queue and re-inserted REQUEUE_OFFSET positions later (or
-        at the end if fewer cards remain).
+        If the card was answered incorrectly, it is re-inserted REQUEUE_OFFSET
+        positions later (or at the end if fewer cards remain). The card should
+        have been already removed from the queue by next_card().
 
         Args:
             card: The Flashcard that was answered.
             correct: Whether the user's answer was correct.
         """
-        if not self.queue or self.queue[0] != card:
-            return
-
-        self.queue.pop(0)
-
         if not correct:
             insert_pos = min(self.REQUEUE_OFFSET, len(self.queue))
             self.queue.insert(insert_pos, card)
+
+
+QUIZ_MODES = {
+    "sequential": SequentialMode,
+    "random": RandomMode,
+    "adaptive": AdaptiveMode,
+}
 
 
 def get_quiz_mode(name: str, cards: list[Flashcard]) -> QuizMode:
     """Factory function to create a quiz mode by name.
 
     Args:
-        name: The name of the quiz mode (case-insensitive).
+        name: The name of the quiz mode (case-insensitive, whitespace-trimmed).
             Valid modes: 'sequential', 'random', 'adaptive'.
         cards: A list of Flashcard objects.
 
@@ -197,15 +211,10 @@ def get_quiz_mode(name: str, cards: list[Flashcard]) -> QuizMode:
     Raises:
         ValueError: If the mode name is unknown.
     """
-    modes = {
-        "sequential": SequentialMode,
-        "random": RandomMode,
-        "adaptive": AdaptiveMode,
-    }
-
-    mode_class = modes.get(name.lower())
+    normalized_name = name.strip().lower()
+    mode_class = QUIZ_MODES.get(normalized_name)
     if not mode_class:
-        valid_modes = ", ".join(modes.keys())
+        valid_modes = ", ".join(QUIZ_MODES.keys())
         raise ValueError(f"Unknown quiz mode: {name}. Valid modes: {valid_modes}")
 
     return mode_class(cards)
@@ -229,14 +238,14 @@ class QuizSession:
             mode: A QuizMode instance.
         """
         self.mode = mode
-        self.total_questions = 0
-        self.correct_count = 0
-        self.missed_terms: list[str] = []
+        self._total_questions = 0
+        self._correct_count = 0
+        self._missed_terms: list[str] = []
 
     def check_answer(self, card: Flashcard, user_answer: str) -> bool:
         """Check if the user's answer is correct and record the result.
 
-        Answer comparison is case-insensitive and whitespace-trimmed.
+        Answer comparison is case-insensitive and whitespace-normalized.
         Results are automatically recorded in the underlying quiz mode.
 
         Args:
@@ -246,17 +255,44 @@ class QuizSession:
         Returns:
             True if the answer is correct, False otherwise.
         """
-        correct = user_answer.strip().lower() == card.back.lower()
+        correct = _normalize(user_answer) == _normalize(card.back)
 
-        self.total_questions += 1
+        self._total_questions += 1
         if correct:
-            self.correct_count += 1
+            self._correct_count += 1
         else:
-            if card.front not in self.missed_terms:
-                self.missed_terms.append(card.front)
+            if card.front not in self._missed_terms:
+                self._missed_terms.append(card.front)
 
         self.mode.record_result(card, correct)
         return correct
+
+    @property
+    def total_questions(self) -> int:
+        """Get the total number of questions asked.
+
+        Returns:
+            Total question count.
+        """
+        return self._total_questions
+
+    @property
+    def correct_count(self) -> int:
+        """Get the number of correct answers.
+
+        Returns:
+            Number of correct answers.
+        """
+        return self._correct_count
+
+    @property
+    def missed_terms(self) -> list[str]:
+        """Get a copy of the list of missed terms.
+
+        Returns:
+            A copy of the missed terms list.
+        """
+        return self._missed_terms.copy()
 
     @property
     def accuracy(self) -> float:
@@ -266,6 +302,6 @@ class QuizSession:
             The percentage of questions answered correctly (0.0 if no
             questions have been answered yet).
         """
-        if self.total_questions == 0:
+        if self._total_questions == 0:
             return 0.0
-        return (self.correct_count / self.total_questions) * 100.0
+        return (self._correct_count / self._total_questions) * 100.0
