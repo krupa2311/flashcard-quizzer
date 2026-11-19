@@ -11,13 +11,28 @@ from typing import Callable
 from quiz_engine import QuizSession
 
 
-def _is_tty() -> bool:
-    """Check if stdout is a TTY.
+def _use_color() -> bool:
+    """Check if stdout is a TTY and color should be used.
 
     Returns:
         True if stdout is a TTY and NO_COLOR is not set, False otherwise.
     """
     return sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+
+def _colorize(text: str, code: str) -> str:
+    """Format text with an ANSI color code.
+
+    Args:
+        text: The text to format.
+        code: The ANSI color code (e.g., "32" for green, "31" for red).
+
+    Returns:
+        The text formatted with the color code, or plain text if colors disabled.
+    """
+    if _use_color():
+        return f"\033[{code}m{text}\033[0m"
+    return text
 
 
 def green(text: str) -> str:
@@ -29,9 +44,7 @@ def green(text: str) -> str:
     Returns:
         The text formatted in green, or plain text if not a TTY.
     """
-    if _is_tty():
-        return f"\033[32m{text}\033[0m"
-    return text
+    return _colorize(text, "32")
 
 
 def red(text: str) -> str:
@@ -43,9 +56,7 @@ def red(text: str) -> str:
     Returns:
         The text formatted in red, or plain text if not a TTY.
     """
-    if _is_tty():
-        return f"\033[31m{text}\033[0m"
-    return text
+    return _colorize(text, "31")
 
 
 def run_quiz(
@@ -77,10 +88,7 @@ def run_quiz(
                 break
 
             output_fn(f"\n{card.front}")
-            try:
-                user_answer = input_fn("Your answer: ")
-            except (KeyboardInterrupt, EOFError):
-                break
+            user_answer = input_fn("Your answer: ")
 
             if user_answer.strip().lower() == "exit":
                 break
@@ -93,7 +101,7 @@ def run_quiz(
                 output_fn(red(f"Incorrect. The correct answer is: {card.back}"))
 
     except (KeyboardInterrupt, EOFError):
-        pass
+        output_fn("")
 
 
 def print_summary(
@@ -105,7 +113,7 @@ def print_summary(
 
     If no questions were answered, prints a friendly message. Otherwise,
     prints a table with total questions, accuracy percentage (one decimal),
-    and the list of missed terms.
+    correct/incorrect counts, and optionally each missed term with its answer.
 
     Args:
         session: The QuizSession to summarize.
@@ -119,8 +127,13 @@ def print_summary(
     output_fn("\n" + "=" * 50)
     output_fn("Quiz Summary")
     output_fn("=" * 50)
-    output_fn(f"Total Questions: {session.total_questions}")
-    output_fn(f"Accuracy: {session.accuracy:.1f}%")
+
+    incorrect_count = session.total_questions - session.correct_count
+
+    output_fn(f"Total Questions:      {session.total_questions}")
+    output_fn(f"Correct:              {session.correct_count}")
+    output_fn(f"Incorrect:            {incorrect_count}")
+    output_fn(f"Accuracy:             {session.accuracy:.1f}%")
 
     if session.missed_terms:
         output_fn("\nMissed Terms:")
@@ -128,8 +141,10 @@ def print_summary(
             output_fn(f"  - {term}")
 
         if show_details:
-            # Note: This would require storing card objects to show answers.
-            # For now, we just list the missed terms.
-            pass
+            front_to_back = {card.front: card.back for card in session.mode.cards}
+            output_fn("\nMissed Term Details:")
+            for term in session.missed_terms:
+                answer = front_to_back.get(term, "N/A")
+                output_fn(f"  {term}: {answer}")
 
     output_fn("=" * 50)

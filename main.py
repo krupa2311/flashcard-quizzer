@@ -21,8 +21,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     Returns:
         Parsed arguments as an argparse.Namespace.
     """
+    mode_choices = list(QUIZ_MODES.keys())
+    mode_help = f"Quiz mode: {', '.join(mode_choices)} (default: sequential)"
+
     parser = argparse.ArgumentParser(
-        prog="Flashcard Quizzer",
+        prog="main.py",
         description="Quiz yourself with flashcards from a JSON file.",
     )
 
@@ -37,8 +40,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-m",
         "--mode",
         default="sequential",
-        choices=list(QUIZ_MODES.keys()),
-        help="Quiz mode: sequential (default), random, or adaptive",
+        choices=mode_choices,
+        help=mode_help,
     )
 
     parser.add_argument(
@@ -62,30 +65,23 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code: 0 on success, 1 on error.
     """
+    args = parse_args(argv)
+
     try:
-        args = parse_args(argv)
-
-        # Load flashcards
         cards = load_flashcards(args.file)
-
-        # Create quiz session
         mode = get_quiz_mode(args.mode, cards)
         session = QuizSession(mode)
-
-        # Run the quiz
-        run_quiz(session)
-
-        # Print summary
-        print_summary(session, show_details=args.stats)
-
-        return 0
-
     except FlashcardLoadError as e:
         print(f"Error loading flashcards: {e}", file=sys.stderr)
         return 1
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+
+    run_quiz(session)
+    print_summary(session, show_details=args.stats)
+
+    return 0
 
 
 if __name__ == "__main__":
