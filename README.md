@@ -166,3 +166,4 @@ The suite has 142 tests with 100% line coverage of the source modules.
 The code was generated with Claude Code and then reviewed, tested, and
 corrected by the author. See `docs/ai_edit_log.md` for the prompts, the
 problems found in AI output, and the fixes.
+The final report is in `docs/report.md`.
