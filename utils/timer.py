@@ -36,20 +36,28 @@ def timed_input(prompt: str, timeout: int) -> str:
     sys.stdout.write(prompt)
     sys.stdout.flush()
 
+    # Note: select does not see data already held in Python's read buffer,
+    # so piped multi-line input with an open writer may time out spuriously.
+    # This does not affect interactive terminals.
     ready, _, _ = select.select([sys.stdin], [], [], timeout)
 
     if ready:
         line = sys.stdin.readline()
         if not line:
             raise EOFError()
-        return line.rstrip("\n")
+        return line.rstrip("\r\n")
 
     if sys.stdin.isatty():
+        exception_tuple: tuple = (ImportError, OSError)
         try:
             import termios
 
+            # Include termios.error in exception tuple
+            if hasattr(termios, "error"):
+                exception_tuple = (ImportError, OSError, termios.error)
             termios.tcflush(sys.stdin, termios.TCIFLUSH)
-        except Exception:
+        except exception_tuple:  # type: ignore[misc]
+            # Failed flush must never crash the app
             pass
 
     raise InputTimeout()

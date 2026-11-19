@@ -144,6 +144,28 @@ class TestTimedInput:
         with pytest.raises(InputTimeout):
             timed_input("Your answer: ", 1)
 
+    def test_timed_input_handles_termios_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """timed_input handles termios.error gracefully."""
+        monkeypatch.setattr(
+            "select.select",
+            lambda *args, **kwargs: ([], [], []),
+        )
+        fake_stdin = io.StringIO("unused")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+        import termios
+
+        def mock_tcflush_fail(fd, how):
+            raise termios.error("Device or resource busy")
+
+        monkeypatch.setattr("termios.tcflush", mock_tcflush_fail)
+
+        with pytest.raises(InputTimeout):
+            timed_input("Your answer: ", 1)
+
     def test_timed_input_writes_prompt(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """timed_input writes the prompt to stdout."""
         monkeypatch.setattr(
