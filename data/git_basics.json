@@ -1,0 +1,14 @@
+{
+  "cards": [
+    {"front": "Which command creates a new, empty Git repository? (type the full command)", "back": "git init"},
+    {"front": "Which command copies a remote repository to your computer? (type the full command)", "back": "git clone"},
+    {"front": "Which command shows which files are modified or staged? (type the full command)", "back": "git status"},
+    {"front": "Which command stages every change in the current folder? (type the full command, with a dot)", "back": "git add ."},
+    {"front": "Which command records the staged changes as a commit? (type the full command, without options)", "back": "git commit"},
+    {"front": "Which command uploads your local commits to a remote repository? (type the full command)", "back": "git push"},
+    {"front": "Which command downloads and merges changes from a remote repository? (type the full command)", "back": "git pull"},
+    {"front": "Which command shows changes that are not yet staged? (type the full command)", "back": "git diff"},
+    {"front": "Which command lists, creates, or deletes branches? (type the full command)", "back": "git branch"},
+    {"front": "What is the default name Git gives to the remote you cloned from?", "back": "origin"}
+  ]
+}
