@@ -5,11 +5,62 @@ flow for the Flashcard Quizzer.
 """
 
 import argparse
+import random
 import sys
 
 from quiz_engine import QUIZ_MODES, QuizSession, get_quiz_mode
 from ui import print_summary, run_quiz
-from utils.file_handler import FlashcardLoadError, load_flashcards
+from utils.file_handler import Flashcard, FlashcardLoadError, load_flashcards
+
+
+def _validate_limit(value: str) -> int:
+    """Validate that --limit argument is a positive integer.
+
+    Args:
+        value: The string value from argparse.
+
+    Returns:
+        The validated integer value.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is not a positive integer.
+    """
+    try:
+        num = int(value)
+        if num < 1:
+            raise argparse.ArgumentTypeError(
+                f"--limit must be a positive integer (>= 1), got {num}"
+            )
+        return num
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--limit must be an integer, got '{value}'")
+
+
+def select_cards(
+    cards: list[Flashcard], limit: int | None, mode: str
+) -> list[Flashcard]:
+    """Select a subset of cards based on limit and quiz mode.
+
+    If limit is None or greater than or equal to the number of cards,
+    all cards are returned. For sequential mode, the first limit cards
+    are returned in order. For other modes, limit cards are randomly
+    selected using random.sample.
+
+    Args:
+        cards: The list of Flashcard objects to select from.
+        limit: Maximum number of cards to return, or None for all cards.
+        mode: The quiz mode ('sequential', 'random', 'adaptive').
+
+    Returns:
+        A list of selected Flashcard objects (never mutates the input list).
+    """
+    if limit is None or limit >= len(cards):
+        return cards.copy()
+
+    if mode == "sequential":
+        return cards[:limit]
+
+    return random.sample(cards, limit)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -50,6 +101,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Show detailed statistics after the quiz",
     )
 
+    parser.add_argument(
+        "--limit",
+        type=_validate_limit,
+        default=None,
+        help="Limit the number of cards to quiz on",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -69,7 +127,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         cards = load_flashcards(args.file)
-        mode = get_quiz_mode(args.mode, cards)
+        selected_cards = select_cards(cards, args.limit, args.mode)
+        mode = get_quiz_mode(args.mode, selected_cards)
         session = QuizSession(mode)
     except FlashcardLoadError as e:
         print(f"Error loading flashcards: {e}", file=sys.stderr)

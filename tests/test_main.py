@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from main import parse_args, main
+from main import parse_args, main, select_cards
+from utils.file_handler import Flashcard
 
 
 class TestParseArgs:
@@ -44,6 +45,119 @@ class TestParseArgs:
         for mode in ["sequential", "random", "adaptive"]:
             args = parse_args(["-f", "test.json", "-m", mode])
             assert args.mode == mode
+
+    def test_parse_args_limit_default_is_none(self) -> None:
+        """--limit argument defaults to None."""
+        args = parse_args(["-f", "test.json"])
+        assert args.limit is None
+
+    def test_parse_args_with_valid_limit(self) -> None:
+        """Valid --limit argument is parsed correctly."""
+        args = parse_args(["-f", "test.json", "--limit", "5"])
+        assert args.limit == 5
+
+    def test_parse_args_limit_zero_raises_system_exit(self) -> None:
+        """--limit 0 raises SystemExit."""
+        with pytest.raises(SystemExit):
+            parse_args(["-f", "test.json", "--limit", "0"])
+
+    def test_parse_args_limit_negative_raises_system_exit(self) -> None:
+        """--limit -1 raises SystemExit."""
+        with pytest.raises(SystemExit):
+            parse_args(["-f", "test.json", "--limit", "-1"])
+
+    def test_parse_args_limit_non_integer_raises_system_exit(self) -> None:
+        """--limit abc raises SystemExit."""
+        with pytest.raises(SystemExit):
+            parse_args(["-f", "test.json", "--limit", "abc"])
+
+
+class TestSelectCards:
+    """Tests for the select_cards function."""
+
+    def test_select_cards_no_limit_returns_all(self) -> None:
+        """select_cards with limit=None returns all cards."""
+        cards = [
+            Flashcard("Q1", "A1"),
+            Flashcard("Q2", "A2"),
+            Flashcard("Q3", "A3"),
+        ]
+        result = select_cards(cards, None, "sequential")
+
+        assert len(result) == 3
+        assert result == cards
+
+    def test_select_cards_limit_larger_than_deck_returns_all(self) -> None:
+        """select_cards with limit >= len(cards) returns all cards."""
+        cards = [
+            Flashcard("Q1", "A1"),
+            Flashcard("Q2", "A2"),
+        ]
+        result = select_cards(cards, 10, "sequential")
+
+        assert len(result) == 2
+        assert result == cards
+
+    def test_select_cards_sequential_returns_first_n_in_order(self) -> None:
+        """select_cards with sequential mode returns first N in order."""
+        cards = [
+            Flashcard("Q1", "A1"),
+            Flashcard("Q2", "A2"),
+            Flashcard("Q3", "A3"),
+            Flashcard("Q4", "A4"),
+        ]
+        result = select_cards(cards, 2, "sequential")
+
+        assert len(result) == 2
+        assert result[0].front == "Q1"
+        assert result[1].front == "Q2"
+
+    def test_select_cards_random_returns_n_unique_cards(self) -> None:
+        """select_cards with random mode returns N unique cards."""
+        cards = [
+            Flashcard("Q1", "A1"),
+            Flashcard("Q2", "A2"),
+            Flashcard("Q3", "A3"),
+            Flashcard("Q4", "A4"),
+            Flashcard("Q5", "A5"),
+        ]
+        result = select_cards(cards, 3, "random")
+
+        assert len(result) == 3
+        # Verify no duplicates by checking all fronts are unique
+        fronts = [card.front for card in result]
+        assert len(fronts) == len(set(fronts))
+
+    def test_select_cards_adaptive_returns_n_unique_cards(self) -> None:
+        """select_cards with adaptive mode returns N unique cards."""
+        cards = [
+            Flashcard("Q1", "A1"),
+            Flashcard("Q2", "A2"),
+            Flashcard("Q3", "A3"),
+            Flashcard("Q4", "A4"),
+        ]
+        result = select_cards(cards, 2, "adaptive")
+
+        assert len(result) == 2
+        # Verify no duplicates by checking all fronts are unique
+        fronts = [card.front for card in result]
+        assert len(fronts) == len(set(fronts))
+
+    def test_select_cards_does_not_mutate_input_list(self) -> None:
+        """select_cards never mutates the input list."""
+        cards = [
+            Flashcard("Q1", "A1"),
+            Flashcard("Q2", "A2"),
+            Flashcard("Q3", "A3"),
+        ]
+        original_length = len(cards)
+        original_first = cards[0]
+
+        result = select_cards(cards, 2, "sequential")
+
+        assert len(cards) == original_length
+        assert cards[0] == original_first
+        assert result is not cards
 
 
 class TestMain:
@@ -161,3 +275,26 @@ class TestMain:
             runpy.run_module("main", run_name="__main__")
 
         assert exc_info.value.code == 1
+
+    def test_main_with_limit_asks_exactly_n_questions(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """main with --limit 2 asks exactly 2 questions."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                    {"front": "Q2", "back": "A2"},
+                    {"front": "Q3", "back": "A3"},
+                    {"front": "Q4", "back": "A4"},
+                ]
+            )
+        )
+
+        fake_stdin = io.StringIO("a1\na2\n")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+
+        result = main(["-f", str(deck_file), "--limit", "2"])
+
+        assert result == 0
