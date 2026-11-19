@@ -71,6 +71,41 @@ class TestParseArgs:
         with pytest.raises(SystemExit):
             parse_args(["-f", "test.json", "--limit", "abc"])
 
+    def test_parse_args_timed_default_is_false(self) -> None:
+        """--timed argument defaults to False."""
+        args = parse_args(["-f", "test.json"])
+        assert args.timed is False
+
+    def test_parse_args_with_timed_flag(self) -> None:
+        """--timed flag sets timed to True."""
+        args = parse_args(["-f", "test.json", "--timed"])
+        assert args.timed is True
+
+    def test_parse_args_time_limit_default_is_20(self) -> None:
+        """--time-limit argument defaults to 20."""
+        args = parse_args(["-f", "test.json"])
+        assert args.time_limit == 20
+
+    def test_parse_args_with_valid_time_limit(self) -> None:
+        """Valid --time-limit argument is parsed correctly."""
+        args = parse_args(["-f", "test.json", "--time-limit", "30"])
+        assert args.time_limit == 30
+
+    def test_parse_args_time_limit_zero_raises_system_exit(self) -> None:
+        """--time-limit 0 raises SystemExit."""
+        with pytest.raises(SystemExit):
+            parse_args(["-f", "test.json", "--time-limit", "0"])
+
+    def test_parse_args_time_limit_negative_raises_system_exit(self) -> None:
+        """--time-limit -1 raises SystemExit."""
+        with pytest.raises(SystemExit):
+            parse_args(["-f", "test.json", "--time-limit", "-1"])
+
+    def test_parse_args_time_limit_non_integer_raises_system_exit(self) -> None:
+        """--time-limit abc raises SystemExit."""
+        with pytest.raises(SystemExit):
+            parse_args(["-f", "test.json", "--time-limit", "abc"])
+
 
 class TestSelectCards:
     """Tests for the select_cards function."""
@@ -469,3 +504,152 @@ class TestMain:
         assert result == 0
         captured = capsys.readouterr()
         assert f"Results saved to {export_file}" in captured.out
+
+    def test_main_timed_unsupported_returns_1(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        """main with --timed on unsupported platform returns 1."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                ]
+            )
+        )
+
+        monkeypatch.setattr(
+            "main.timed_input_supported",
+            lambda: False,
+        )
+
+        result = main(["-f", str(deck_file), "--timed"])
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "not supported" in captured.err.lower()
+
+    def test_main_timed_prints_mode_message(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        """main with --timed prints timed mode message."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                ]
+            )
+        )
+
+        def mock_input_fn(prompt: str, timeout: int) -> str:
+            return "a1"
+
+        monkeypatch.setattr(
+            "main.timed_input_supported",
+            lambda: True,
+        )
+        monkeypatch.setattr("main.timed_input", mock_input_fn)
+
+        result = main(["-f", str(deck_file), "--timed"])
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Timed mode:" in captured.out
+        assert "20 seconds" in captured.out
+
+    def test_main_timed_with_custom_time_limit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        """main with --timed and --time-limit prints custom time limit."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                ]
+            )
+        )
+
+        def mock_input_fn(prompt: str, timeout: int) -> str:
+            return "a1"
+
+        monkeypatch.setattr(
+            "main.timed_input_supported",
+            lambda: True,
+        )
+        monkeypatch.setattr("main.timed_input", mock_input_fn)
+
+        result = main(["-f", str(deck_file), "--timed", "--time-limit", "30"])
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Timed mode:" in captured.out
+        assert "30 seconds" in captured.out
+
+    def test_main_timed_without_flag_ignores_time_limit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        """main without --timed does not use timed input even with --time-limit."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                ]
+            )
+        )
+
+        fake_stdin = io.StringIO("a1\n")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+
+        result = main(["-f", str(deck_file), "--time-limit", "30"])
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Timed mode:" not in captured.out
+
+    def test_main_timed_uses_monkeypatched_timed_input(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """main with --timed uses the input_fn from timed_input."""
+        deck_file = tmp_path / "valid.json"
+        deck_file.write_text(
+            json.dumps(
+                [
+                    {"front": "Q1", "back": "A1"},
+                ]
+            )
+        )
+
+        timed_input_calls = []
+
+        def mock_timed_input(prompt: str, timeout: int) -> str:
+            timed_input_calls.append((prompt, timeout))
+            return "a1"
+
+        monkeypatch.setattr(
+            "main.timed_input_supported",
+            lambda: True,
+        )
+        monkeypatch.setattr("main.timed_input", mock_timed_input)
+
+        result = main(["-f", str(deck_file), "--timed", "--time-limit", "15"])
+
+        assert result == 0
+        assert len(timed_input_calls) > 0
+        assert timed_input_calls[0][1] == 15

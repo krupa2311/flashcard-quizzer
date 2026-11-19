@@ -7,6 +7,7 @@ import pytest
 from quiz_engine import QuizSession, get_quiz_mode
 from ui import green, print_summary, red, run_quiz
 from utils.file_handler import Flashcard
+from utils.timer import InputTimeout
 
 
 class TestColorHelpers:
@@ -187,6 +188,115 @@ class TestRunQuiz:
         run_quiz(session, input_fn=mock_input_fn, output_fn=mock_output_fn)
 
         # Quiz should have asked all 2 questions and stopped
+        assert session.total_questions == 2
+
+    def test_run_quiz_timeout_counts_as_incorrect(self) -> None:
+        """InputTimeout causes the question to be counted as incorrect."""
+        cards = [Flashcard("Q1", "A1")]
+        session = QuizSession(get_quiz_mode("sequential", cards))
+
+        def mock_input_fn(prompt: str) -> str:
+            raise InputTimeout()
+
+        output_lines = []
+
+        def mock_output_fn(line: str) -> None:
+            output_lines.append(line)
+
+        run_quiz(session, input_fn=mock_input_fn, output_fn=mock_output_fn)
+
+        assert session.total_questions == 1
+        assert session.correct_count == 0
+
+    def test_run_quiz_timeout_prints_correct_answer(self) -> None:
+        """InputTimeout prints the correct answer in red."""
+        cards = [Flashcard("Q1", "CorrectAnswer")]
+        session = QuizSession(get_quiz_mode("sequential", cards))
+
+        def mock_input_fn(prompt: str) -> str:
+            raise InputTimeout()
+
+        output_lines = []
+
+        def mock_output_fn(line: str) -> None:
+            output_lines.append(line)
+
+        run_quiz(session, input_fn=mock_input_fn, output_fn=mock_output_fn)
+
+        output_text = "\n".join(output_lines)
+        assert "Time's up!" in output_text
+        assert "CorrectAnswer" in output_text
+
+    def test_run_quiz_timeout_adds_to_missed_terms(self) -> None:
+        """InputTimeout adds the card to missed_terms."""
+        cards = [Flashcard("MissedTerm", "CorrectAnswer")]
+        session = QuizSession(get_quiz_mode("sequential", cards))
+
+        def mock_input_fn(prompt: str) -> str:
+            raise InputTimeout()
+
+        output_lines = []
+
+        def mock_output_fn(line: str) -> None:
+            output_lines.append(line)
+
+        run_quiz(session, input_fn=mock_input_fn, output_fn=mock_output_fn)
+
+        assert "MissedTerm" in session.missed_terms
+
+    def test_run_quiz_timeout_continues_to_next_card(self) -> None:
+        """Quiz continues to next card after timeout."""
+        cards = [
+            Flashcard("Q1", "A1"),
+            Flashcard("Q2", "A2"),
+        ]
+        session = QuizSession(get_quiz_mode("sequential", cards))
+
+        call_count = [0]
+
+        def mock_input_fn(prompt: str) -> str:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise InputTimeout()
+            return "a2"
+
+        output_lines = []
+
+        def mock_output_fn(line: str) -> None:
+            output_lines.append(line)
+
+        run_quiz(session, input_fn=mock_input_fn, output_fn=mock_output_fn)
+
+        assert session.total_questions == 2
+        assert session.correct_count == 1
+
+    def test_run_quiz_timeout_in_adaptive_mode_requeues_card(self) -> None:
+        """In adaptive mode, timeout causes card to be re-queued."""
+        cards = [
+            Flashcard("Q1", "A1"),
+            Flashcard("Q2", "A2"),
+        ]
+        session = QuizSession(get_quiz_mode("adaptive", cards))
+
+        input_calls = []
+
+        def mock_input_fn(prompt: str) -> str:
+            input_calls.append(prompt)
+            if len(input_calls) == 1:
+                raise InputTimeout()
+            elif len(input_calls) == 2:
+                return "a2"
+            else:
+                return "exit"
+
+        output_lines = []
+
+        def mock_output_fn(line: str) -> None:
+            output_lines.append(line)
+
+        run_quiz(session, input_fn=mock_input_fn, output_fn=mock_output_fn)
+
+        # First question timed out (Q1), second was answered (Q2)
         assert session.total_questions == 2
 
 

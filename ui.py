@@ -9,6 +9,7 @@ import sys
 from typing import Callable
 
 from quiz_engine import QuizSession
+from utils.timer import InputTimeout
 
 
 def _use_color() -> bool:
@@ -88,7 +89,13 @@ def run_quiz(
                 break
 
             output_fn(f"\n{card.front}")
-            user_answer = input_fn("Your answer: ")
+            try:
+                user_answer = input_fn("Your answer: ")
+            except InputTimeout:
+                output_fn("")
+                output_fn(red(f"Time's up! The correct answer is: {card.back}"))
+                session.check_answer(card, "")
+                continue
 
             if user_answer.strip().lower() == "exit":
                 break

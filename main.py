@@ -5,6 +5,7 @@ flow for the Flashcard Quizzer.
 """
 
 import argparse
+import functools
 import random
 import sys
 
@@ -12,6 +13,7 @@ from quiz_engine import QUIZ_MODES, QuizSession, get_quiz_mode
 from ui import print_summary, run_quiz
 from utils.exporter import ExportError, export_session
 from utils.file_handler import Flashcard, FlashcardLoadError, load_flashcards
+from utils.timer import timed_input, timed_input_supported
 
 
 def _validate_limit(value: str) -> int:
@@ -136,6 +138,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Export session results to a JSON or CSV file",
     )
 
+    parser.add_argument(
+        "--timed",
+        action="store_true",
+        help="Enable timed mode with a time limit per question",
+    )
+
+    parser.add_argument(
+        "--time-limit",
+        type=_validate_limit,
+        default=20,
+        help="Time limit per question in seconds (default: 20, used only with --timed)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -153,6 +168,13 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = parse_args(argv)
 
+    if args.timed and not timed_input_supported():
+        print(
+            "Timed mode is not supported on this platform (Windows).",
+            file=sys.stderr,
+        )
+        return 1
+
     try:
         cards = load_flashcards(args.file)
         selected_cards = select_cards(cards, args.limit, args.mode)
@@ -165,7 +187,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    run_quiz(session)
+    if args.timed:
+        print(f"Timed mode: {args.time_limit} seconds per question")
+        input_fn = functools.partial(timed_input, timeout=args.time_limit)
+        run_quiz(session, input_fn=input_fn)
+    else:
+        run_quiz(session)
+
     print_summary(session, show_details=args.stats)
 
     if args.export:

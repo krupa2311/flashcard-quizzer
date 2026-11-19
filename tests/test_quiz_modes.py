@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from quiz_engine import (
+from quiz_engine import (  # isort: skip
     AdaptiveMode,
     QuizSession,
     RandomMode,
