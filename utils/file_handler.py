@@ -29,6 +29,119 @@ class Flashcard:
     back: str
 
 
+def _read_json(path: str) -> Any:
+    """Read and parse a JSON file.
+
+    Args:
+        path: Path to the JSON file.
+
+    Returns:
+        The parsed JSON data.
+
+    Raises:
+        FlashcardLoadError: If the file cannot be read or contains invalid JSON.
+    """
+    file_path = Path(path)
+
+    # Check if file exists
+    if not file_path.exists():
+        raise FlashcardLoadError(f"File not found: {path}")
+
+    # Try to read and parse JSON
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise FlashcardLoadError(
+            f"Invalid JSON syntax in {path}: {e.msg} at line {e.lineno}, "
+            f"column {e.colno}"
+        ) from e
+    except UnicodeDecodeError as e:
+        raise FlashcardLoadError(f"File {path} is not valid UTF-8 text") from e
+    except OSError as e:
+        raise FlashcardLoadError(f"Error reading file {path}: {e}") from e
+
+    return data
+
+
+def _extract_cards_list(data: Any, path: str) -> list[Any]:
+    """Extract the cards list from parsed JSON data.
+
+    Args:
+        data: The parsed JSON data.
+        path: The file path (for error messages).
+
+    Returns:
+        A list of card dictionaries.
+
+    Raises:
+        FlashcardLoadError: If the structure is invalid or cards is not a list.
+    """
+    if isinstance(data, list):
+        cards_data = data
+    elif isinstance(data, dict) and "cards" in data:
+        cards_data = data["cards"]
+        if not isinstance(cards_data, list):
+            raise FlashcardLoadError(
+                f"Invalid structure in {path}: 'cards' must be a list, "
+                f"got {type(cards_data).__name__}"
+            )
+    else:
+        raise FlashcardLoadError(
+            f"Invalid structure in {path}: expected either a list of cards or "
+            '{"cards": [...]} format'
+        )
+
+    return cards_data
+
+
+def _parse_card(card: Any, index: int) -> Flashcard:
+    """Parse and validate a single card dictionary.
+
+    Args:
+        card: The card dictionary to parse.
+        index: The position of the card (for error messages).
+
+    Returns:
+        A Flashcard object.
+
+    Raises:
+        FlashcardLoadError: If the card is invalid or missing required fields.
+    """
+    if not isinstance(card, dict):
+        raise FlashcardLoadError(
+            f"Card at position {index} is not a dictionary: {type(card).__name__}"
+        )
+
+    if "front" not in card:
+        raise FlashcardLoadError(
+            f"Card at position {index} is missing required field: 'front'"
+        )
+
+    if "back" not in card:
+        raise FlashcardLoadError(
+            f"Card at position {index} is missing required field: 'back'"
+        )
+
+    front = card["front"]
+    back = card["back"]
+
+    # Validate that front and back are non-empty strings
+    if not isinstance(front, str) or not front.strip():
+        raise FlashcardLoadError(
+            f"Card at position {index}: 'front' must be a non-empty string, "
+            f"got {type(front).__name__}"
+        )
+
+    if not isinstance(back, str) or not back.strip():
+        raise FlashcardLoadError(
+            f"Card at position {index}: 'back' must be a non-empty string, "
+            f"got {type(back).__name__}"
+        )
+
+    return Flashcard(front=front.strip(), back=back.strip())
+
+
 def load_flashcards(path: str) -> list[Flashcard]:
     """Load flashcards from a JSON file.
 
@@ -46,70 +159,16 @@ def load_flashcards(path: str) -> list[Flashcard]:
         FlashcardLoadError: If the file cannot be found, contains invalid JSON,
             has an unexpected structure, or any card is missing required fields.
     """
-    file_path = Path(path)
+    data = _read_json(path)
+    cards_data = _extract_cards_list(data, path)
 
-    # Check if file exists
-    if not file_path.exists():
-        raise FlashcardLoadError(f"File not found: {path}")
-
-    # Try to read and parse JSON
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except json.JSONDecodeError as e:
-        raise FlashcardLoadError(
-            f"Invalid JSON syntax in {path}: {e.msg} at line {e.lineno}, "
-            f"column {e.colno}"
-        )
-    except (IOError, OSError) as e:
-        raise FlashcardLoadError(f"Error reading file {path}: {e}")
-
-    # Determine which format and extract cards list
-    cards_data: list[Any]
-    if isinstance(data, list):
-        cards_data = data
-    elif isinstance(data, dict) and "cards" in data:
-        cards_data = data["cards"]
-    else:
-        raise FlashcardLoadError(
-            f"Invalid structure in {path}: expected either a list of cards or "
-            '{"cards": [...]} format'
-        )
+    # Validate that the deck contains at least one card
+    if not cards_data:
+        raise FlashcardLoadError(f"File {path} contains no flashcards")
 
     # Validate and create Flashcard objects
     flashcards: list[Flashcard] = []
     for index, card in enumerate(cards_data, start=1):
-        if not isinstance(card, dict):
-            raise FlashcardLoadError(
-                f"Card at position {index} is not a dictionary: {type(card).__name__}"
-            )
-
-        if "front" not in card:
-            raise FlashcardLoadError(
-                f"Card at position {index} is missing required field: 'front'"
-            )
-
-        if "back" not in card:
-            raise FlashcardLoadError(
-                f"Card at position {index} is missing required field: 'back'"
-            )
-
-        front = card["front"]
-        back = card["back"]
-
-        # Validate that front and back are non-empty strings
-        if not isinstance(front, str) or not front.strip():
-            raise FlashcardLoadError(
-                f"Card at position {index}: 'front' must be a non-empty string, "
-                f"got {type(front).__name__}"
-            )
-
-        if not isinstance(back, str) or not back.strip():
-            raise FlashcardLoadError(
-                f"Card at position {index}: 'back' must be a non-empty string, "
-                f"got {type(back).__name__}"
-            )
-
-        flashcards.append(Flashcard(front=front.strip(), back=back.strip()))
+        flashcards.append(_parse_card(card, index))
 
     return flashcards
