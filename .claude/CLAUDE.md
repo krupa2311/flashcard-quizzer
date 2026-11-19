@@ -137,3 +137,38 @@ The goal is not just to build a working application, but to learn effective AI c
 - Document their journey for future reference and assessment
 
 Success in this project comes from thoughtful collaboration with AI, not from accepting AI suggestions without review and understanding.
+## Flashcard Quizzer: Project-Specific Requirements
+
+### Runtime
+- Python 3.10+, standard pip only (no Poetry or Pipenv).
+
+### Architecture
+- Modular code. Never put everything in main.py. Separate concerns, e.g.
+  data loading, quiz engine, and UI/CLI modules.
+- Use the Strategy pattern: an abstract base class `QuizMode` with
+  `SequentialMode`, `RandomMode`, and `AdaptiveMode` subclasses
+  (each decides which card comes next).
+- Use a Factory function to return the correct mode from the user's input.
+- All functions must have type hints and docstrings.
+
+### Functional rules
+- Load flashcards from JSON in two formats: a list of {"front","back"}
+  objects, or {"cards": [...]}.
+- Missing/malformed files or missing fields must show a friendly error
+  message, never a raw traceback.
+- Answer comparison is case-insensitive.
+- Adaptive mode prioritizes cards the user previously got wrong.
+- End-of-session summary: total questions, accuracy %, list of missed terms.
+- CLI via argparse: -f/--file, -m/--mode, --stats.
+- Green for correct, red for incorrect. "exit" or Ctrl+C quits gracefully.
+
+### Definition of Done
+- pytest passes with >80% coverage; black, mypy, and flake8 all pass
+  (zero flake8 errors).
+- Required tests: test_flashcard_loader.py, test_quiz_modes.py,
+  test_integration.py (names listed in the project instructions).
+
+### Working style
+- Work one phase at a time. Do not build ahead of the current phase.
+- Keep a summary of what you changed so the student can log it in
+  docs/ai_edit_log.md.
